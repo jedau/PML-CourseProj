@@ -1,0 +1,120 @@
+---
+title: "PML-CP"
+author: "Jed Aureus Gonzales"
+date: "Friday, 24 October, 2014"
+---
+
+# Practical Machine Learning Writeup
+
+This is the writeup of the peer-assessed course project for the Coursera
+course, Practical Machine Learning. This part involves outlining the steps for predicting an individual's activity using the [Groupware](http://groupware.les.inf.puc-rio.br/har) dataset.
+
+## Getting and Cleaning the Data
+
+First and foremost, load all the necessary libraries and set the seed to ensure reproducibility.
+
+```{r, message=FALSE}
+library(caret)
+set.seed(1337)
+```
+
+After loading all the necessary libraries, download the training and testing data from their respective links. Upon examining the data, noise in the form of `#DIV/0!` and blank data seem to be prevalent. A conversion to `NA` is necessary to ensure smoother processing.
+
+```{r, message=FALSE}
+if (!file.exists("pml-training.csv")) {
+    download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                  destfile = "pml-training.csv",
+                  method = "curl")
+}
+if (!file.exists("pml-testing.csv")) {
+    download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                  destfile = "pml-testing.csv",
+                  method = "curl")
+}
+training <- read.csv("pml-training.csv", na.strings=c("NA", "#DIV/0!", "") )
+testing <- read.csv("pml-testing.csv", na.strings=c("NA", "#DIV/0!", "") )
+```
+
+## Feature Selection
+
+After cleaning the data, the next step involved is feature selection. To do this, exploratory data analysis should be conducted on the training set, and because of the size constraint of the project, details of the analysis will not be explored but instead be outlined in this section of the writeup.
+
+For the purpose of this project, columns with value of `NA`, observations with an `NA` value for `classe`, and username, timestamps and windows columns were discarded as they served no use for prediction. The following code was used to select the desired features:
+```{r, message=FALSE}
+features <- colnames(training[colSums(is.na(training)) == 0])[-(1:7)]
+data <- training[features]
+```
+
+## Cross-Validation
+
+Considering the sample size of the data, divide the data further into training (60%) and testing (40%) sets.
+
+```{r, message=FALSE, cache=TRUE}
+inTrain <- createDataPartition(data$classe, p=.60, list=FALSE)
+train <- data[inTrain,]
+test <- data[-inTrain,]
+```
+
+## Prediction
+
+To test which algorithm is the most accurate, run different prediction algorithms on the data and perform a comparative analysis afterward.
+
+The first algorithm that was tested was `randomForest`.
+```{r, message=FALSE}
+library(randomForest)
+model.rf <- randomForest(classe ~ ., data = train)
+confusionMatrix(test$classe, predict(model.rf, test))
+```
+
+The `randomForest` algorithm yielded an accuracy of `0.9916` with a 95% confidence interval of `(0.9893, 0.9935)` and a Kappa of `0.9894`. `roll_belt`, `yaw_belt` and `pitch_forearm` were the top 3 features based on Gini importance.
+
+The next algorithm that was tested was `rpart`.
+```{r, message=FALSE}
+library(rattle)
+model.rpart <- train(classe ~ ., data = train, method = "rpart")
+confusionMatrix(test$classe, predict(model.rpart, test))
+```
+```{r, echo=FALSE}
+fancyRpartPlot(model.rpart$finalModel)
+```
+
+The `rpart` algorithm yielded an accuracy of `0.4946`, a Kappa of `0.3397`, a root node error of `0.71569` and used `roll_belt`, `pitch_forearm`, `magnet_dumbbell` and `roll_forearm` in the decision tree.
+
+The next algorithms that were tested were linear discriminant analysis and Naive Bayes.
+```{r, message=FALSE}
+model.lda <- train(classe ~ ., data = train, method = "lda")
+confusionMatrix(test$classe, predict(model.lda, test))
+```
+
+The `lda` algorithm yielded an accuracy of `0.7033` and a Kappa of `0.6245`.
+
+Below are tables of comparison of the algorithms in terms of predicting the `test` data.
+
+```{r}
+RandomForest <- predict(model.rf, test)
+RPart <- predict(model.rpart, test)
+LDA <- predict(model.lda, test)
+table(RandomForest, RPart)
+table(RandomForest, LDA)
+table(RPart, LDA)
+```
+
+It can be concluded that the `randomForest` algorithm is the best prediction algorithm for prediciting activities via accelerometers given the data set provided.
+
+## Programming Assignment
+
+Upon running the model against the 20 test observations, it resulted in a 100% accuracy, further strengthening the hypothesis that the `randomForest` algorithm is the best fit for the data.
+
+```{r, message=FALSE}
+answers = rep("A", 20)
+pml_write_files = function(x) {
+  n = length(x)
+  for(i in 1:n) {
+    filename = paste0("problem_id_",i, ".txt")
+    write.table(x[i], file = filename, quote = FALSE,
+                row.names = FALSE, col.names = FALSE)
+    }
+}
+answers <- predict(model.rf, testing)
+pml_write_files(answers)
+```
